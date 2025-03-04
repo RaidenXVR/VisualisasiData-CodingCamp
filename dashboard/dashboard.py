@@ -5,6 +5,48 @@ import seaborn as sns
 import statsmodels.api as sm
 import numpy as np
 
+
+def run_regression(temp, hum, wind, season, weathersit):
+    reg_daily_data = pd.read_csv("./dashboard/day_cleaned.csv")
+    features = ["temp", "hum", "windspeed", "season", "weathersit"]
+    target1 = ["casual"]
+    target2 = ["registered"]
+    x_data = reg_daily_data[features + target1 + target2]
+    x_data["temp_actual"] = x_data["temp"].mul(41)
+    x_data["hum_actual"] = x_data["hum"].mul(100)
+    x_data["windspeed_actual"] = x_data["windspeed"].mul(67)
+
+    features_actual = [
+        "temp_actual",
+        "hum_actual",
+        "windspeed_actual",
+        "season",
+        "weathersit",
+    ]
+    x = sm.add_constant(x_data[features_actual])
+    y1 = daily_data[target1]
+    y2 = daily_data[target2]
+    model_casual = sm.OLS(y1, x).fit()
+    model_registered = sm.OLS(y2, x).fit()
+
+    input_dict = {
+        "const": 1,
+        "temp": temp,
+        "hum": hum,
+        "windspeed_actual": wind,
+        "season": season,
+        "weathersit": weathersit,
+    }
+    input_df = pd.DataFrame(input_dict, index=[0])
+    casual_out = model_casual.predict(input_df).iloc[0]
+    registered_out = model_registered.predict(input_df).iloc[0]
+
+    return [
+        0 if casual_out < 0 else casual_out,
+        0 if registered_out < 0 else registered_out,
+    ]
+
+
 # Load data
 hourly_data = pd.read_csv("dashboard/hour_cleaned.csv")
 daily_data = pd.read_csv("dashboard/day_cleaned.csv")
@@ -14,6 +56,41 @@ st.set_page_config(page_title="Bike Sharing Analysis", layout="wide")
 # Sidebar
 st.sidebar.title("About")
 st.sidebar.info("Dashboard ini dibuat untuk menganalisis pola perentalan sepeda.")
+
+temp_input = st.sidebar.slider(
+    "Temperature (°C)",
+    daily_data["temp"].min() * 41,
+    daily_data["temp"].max() * 41,
+    daily_data["temp"].mean() * 41,
+)
+hum_input = st.sidebar.slider(
+    "Humidity",
+    daily_data["hum"].min() * 100,
+    daily_data["hum"].max() * 100,
+    daily_data["hum"].mean() * 100,
+)
+wind_input = st.sidebar.slider(
+    "Wind Speed",
+    daily_data["windspeed"].min() * 67,
+    daily_data["windspeed"].max() * 67,
+    daily_data["windspeed"].mean() * 67,
+)
+# For categorical variables
+
+season_options = sorted(daily_data["season"].unique())
+season_input = st.sidebar.selectbox("Season", season_options)
+
+weathersit_options = sorted(daily_data["weathersit"].unique())
+weathersit_input = st.sidebar.selectbox("Weather Situation", weathersit_options)
+
+prediction = run_regression(
+    temp_input, hum_input, wind_input, season_input, weathersit_input
+)
+
+st.sidebar.markdown("### Predicted Bike Rentals")
+
+st.sidebar.write(f"**Casual: {prediction[0]:.2f} bikes**")
+st.sidebar.write(f"**Registered: {prediction[1]:.2f} bikes**")
 
 st.title("Bike Sharing Analysis Dashboard")
 
@@ -326,12 +403,16 @@ tab2.code(model.summary())
 tab1.markdown(
     """
 **Insight:**
+- Untuk Regresi dengan data perental kasual, nilai R-squared adalah 0.380, artinya variabel independen memiliki pengaruh terhadap variabel dependen sebesar 38%.
+- Untuk Regresi dengan data perental teregistrasi, nilai R-squared adalah 0.419, artinya variabel independen memiliki pengaruh terhadap variabel dependen sebesar 41.9%.
 - Untuk perental kasual, musim tidak memiliki pengaruh signifikan terhadap jumlah perental kasual berdasarkan nilai `p` yang lebih dari 0.05.
 - Untuk perental teregistrasi, semua parameter cuaca memiliki pengaruh yang signifikan terhadap jumlah pengguna teregistrasi."""
 )
 tab2.markdown(
     """
 **Insight:**
+- Untuk Regresi dengan data perental kasual, nilai R-squared adalah 0.380, artinya variabel independen memiliki pengaruh terhadap variabel dependen sebesar 38%.
+- Untuk Regresi dengan data perental teregistrasi, nilai R-squared adalah 0.419, artinya variabel independen memiliki pengaruh terhadap variabel dependen sebesar 41.9%.
 - Untuk perental kasual, musim tidak memiliki pengaruh signifikan terhadap jumlah perental kasual berdasarkan nilai `p` yang lebih dari 0.05.
 - Untuk perental teregistrasi, semua parameter cuaca memiliki pengaruh yang signifikan terhadap jumlah pengguna teregistrasi."""
 )
