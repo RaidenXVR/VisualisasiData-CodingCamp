@@ -57,6 +57,10 @@ st.set_page_config(page_title="Bike Sharing Analysis", layout="wide")
 st.sidebar.title("About")
 st.sidebar.info("Dashboard ini dibuat untuk menganalisis pola perentalan sepeda.")
 
+st.sidebar.header(
+    "Fitur Prediksi Menggunakan Regresi OLS Jumlah Perental Berdasarkan Cuaca:"
+)
+
 temp_input = st.sidebar.slider(
     "Temperature (°C)",
     daily_data["temp"].min() * 41,
@@ -77,11 +81,31 @@ wind_input = st.sidebar.slider(
 )
 # For categorical variables
 
+season_mapping = {1: "Spring", 2: "Summer", 3: "Fall", 4: "Winter"}
+
+# Get the unique season values (assumes they are numeric: 1, 2, 3, 4)
 season_options = sorted(daily_data["season"].unique())
-season_input = st.sidebar.selectbox("Season", season_options)
+
+# Use multiselect with format_func to display the mapped labels
+season_input = st.sidebar.selectbox(
+    "Select Season(s):",
+    options=season_options,
+    format_func=lambda x: season_mapping.get(x, "Unknown"),
+)
+
+weathersit_mapping = {
+    1: "Clear",
+    2: "Cloudy",
+    3: "Light Rain",
+    4: "Heavy Rain/Thunderstorm",
+}
 
 weathersit_options = sorted(daily_data["weathersit"].unique())
-weathersit_input = st.sidebar.selectbox("Weather Situation", weathersit_options)
+weathersit_input = st.sidebar.selectbox(
+    "Weather Situation",
+    options=weathersit_options,
+    format_func=lambda x: weathersit_mapping.get(x, "Unknown"),
+)
 
 prediction = run_regression(
     temp_input, hum_input, wind_input, season_input, weathersit_input
