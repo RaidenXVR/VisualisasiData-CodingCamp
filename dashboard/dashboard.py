@@ -6,129 +6,89 @@ import statsmodels.api as sm
 import numpy as np
 
 
-def run_regression(temp, hum, wind, season, weathersit):
-    reg_daily_data = pd.read_csv("./dashboard/day_cleaned.csv")
-    features = ["temp", "hum", "windspeed", "season", "weathersit"]
-    target1 = ["casual"]
-    target2 = ["registered"]
-    x_data = reg_daily_data[features + target1 + target2]
-    x_data["temp_actual"] = x_data["temp"].mul(41)
-    x_data["hum_actual"] = x_data["hum"].mul(100)
-    x_data["windspeed_actual"] = x_data["windspeed"].mul(67)
-
-    features_actual = [
-        "temp_actual",
-        "hum_actual",
-        "windspeed_actual",
-        "season",
-        "weathersit",
-    ]
-    x = sm.add_constant(x_data[features_actual])
-    y1 = daily_data[target1]
-    y2 = daily_data[target2]
-    model_casual = sm.OLS(y1, x).fit()
-    model_registered = sm.OLS(y2, x).fit()
-
-    input_dict = {
-        "const": 1,
-        "temp": temp,
-        "hum": hum,
-        "windspeed_actual": wind,
-        "season": season,
-        "weathersit": weathersit,
-    }
-    input_df = pd.DataFrame(input_dict, index=[0])
-    casual_out = model_casual.predict(input_df).iloc[0]
-    registered_out = model_registered.predict(input_df).iloc[0]
-
-    return [
-        0 if casual_out < 0 else casual_out,
-        0 if registered_out < 0 else registered_out,
-    ]
-
-
 # Load data
 hourly_data = pd.read_csv("dashboard/hour_cleaned.csv")
 daily_data = pd.read_csv("dashboard/day_cleaned.csv")
 
+# Convert date columns to datetime
+hourly_data["dteday"] = pd.to_datetime(hourly_data["dteday"])
+daily_data["dteday"] = pd.to_datetime(daily_data["dteday"])
+
 st.set_page_config(page_title="Bike Sharing Analysis", layout="wide")
 
-# Sidebar
+# Filter
+st.sidebar.header("Filter Data")
+
+# Date range filter
+start_date = st.sidebar.date_input(
+    "Start Date",
+    value=hourly_data["dteday"].min(),
+    min_value=hourly_data["dteday"].min(),
+    max_value=hourly_data["dteday"].max(),
+)
+end_date = st.sidebar.date_input(
+    "End Date",
+    value=hourly_data["dteday"].max(),
+    min_value=hourly_data["dteday"].min(),
+    max_value=hourly_data["dteday"].max(),
+)
+
+# Working Day filter
+workingday_options = st.sidebar.multiselect(
+    "Select Day Type",
+    options=["Working Day", "Holiday"],
+    default=["Working Day", "Holiday"],
+)
+# Map the selection to the values in the dataset (1 for working day, 0 for holiday)
+workingday_filter = []
+if "Working Day" in workingday_options:
+    workingday_filter.append(1)
+if "Holiday" in workingday_options:
+    workingday_filter.append(0)
+
+# Hour filter for hourly data
+hour_range = st.sidebar.slider("Hour Range (Hourly Data)", 0, 23, (0, 23))
+
+# Apply filters to the datasets
+filtered_hourly = hourly_data[
+    (hourly_data["dteday"] >= pd.to_datetime(start_date))
+    & (hourly_data["dteday"] <= pd.to_datetime(end_date))
+    & (hourly_data["workingday"].isin(workingday_filter))
+    & (hourly_data["hr"].between(hour_range[0], hour_range[1]))
+]
+
+filtered_daily = daily_data[
+    (daily_data["dteday"] >= pd.to_datetime(start_date))
+    & (daily_data["dteday"] <= pd.to_datetime(end_date))
+    & (daily_data["workingday"].isin(workingday_filter))
+]
+
+# Alert if there is no data after filtering
+if filtered_hourly.empty or filtered_daily.empty:
+    st.warning(
+        "No data available for the selected filters. Please adjust your filter options."
+    )
+
+# Sidebar About section remains as before
 st.sidebar.title("About")
 st.sidebar.info("Dashboard ini dibuat untuk menganalisis pola perentalan sepeda.")
 
-st.sidebar.header(
-    "Fitur Prediksi Menggunakan Regresi OLS Jumlah Perental Berdasarkan Cuaca:"
-)
-
-temp_input = st.sidebar.slider(
-    "Temperature (°C)",
-    daily_data["temp"].min() * 41,
-    daily_data["temp"].max() * 41,
-    daily_data["temp"].mean() * 41,
-)
-hum_input = st.sidebar.slider(
-    "Humidity",
-    daily_data["hum"].min() * 100,
-    daily_data["hum"].max() * 100,
-    daily_data["hum"].mean() * 100,
-)
-wind_input = st.sidebar.slider(
-    "Wind Speed",
-    daily_data["windspeed"].min() * 67,
-    daily_data["windspeed"].max() * 67,
-    daily_data["windspeed"].mean() * 67,
-)
-# For categorical variables
-
-season_mapping = {1: "Spring", 2: "Summer", 3: "Fall", 4: "Winter"}
-
-# Get the unique season values (assumes they are numeric: 1, 2, 3, 4)
-season_options = sorted(daily_data["season"].unique())
-
-# Use multiselect with format_func to display the mapped labels
-season_input = st.sidebar.selectbox(
-    "Select Season(s):",
-    options=season_options,
-    format_func=lambda x: season_mapping.get(x, "Unknown"),
-)
-
-weathersit_mapping = {
-    1: "Clear",
-    2: "Cloudy",
-    3: "Light Rain",
-    4: "Heavy Rain/Thunderstorm",
-}
-
-weathersit_options = sorted(daily_data["weathersit"].unique())
-weathersit_input = st.sidebar.selectbox(
-    "Weather Situation",
-    options=weathersit_options,
-    format_func=lambda x: weathersit_mapping.get(x, "Unknown"),
-)
-
-prediction = run_regression(
-    temp_input, hum_input, wind_input, season_input, weathersit_input
-)
-
-st.sidebar.markdown("### Predicted Bike Rentals")
-
-st.sidebar.write(f"**Casual: {prediction[0]:.2f} bikes**")
-st.sidebar.write(f"**Registered: {prediction[1]:.2f} bikes**")
-
+# -------------------------------
+# Main Dashboard Title and Dataset Preview
+# -------------------------------
 st.title("Bike Sharing Analysis Dashboard")
 
-# Dataset Preview
 st.header("Dataset Preview")
 tab1, tab2 = st.tabs(["Hourly Data", "Daily Data"])
 
 with tab1:
     st.subheader("Hourly Data Preview")
-    st.dataframe(hourly_data.head())
+    st.dataframe(filtered_hourly.head())
 
 with tab2:
     st.subheader("Daily Data Preview")
-    st.dataframe(daily_data.head())
+    st.dataframe(filtered_daily.head())
+
 
 # Q1: Libur vs Kerja
 tab1.header("1. Hari Libur Vs. Hari Kerja")
@@ -139,10 +99,10 @@ tab2.subheader("Weekend Vs. Weekday")
 
 
 hourly_means = (
-    hourly_data.groupby("weekday")[["registered", "casual"]].mean().reset_index()
+    filtered_hourly.groupby("weekday")[["registered", "casual"]].mean().reset_index()
 )
 daily_means = (
-    daily_data.groupby("weekday")[["registered", "casual"]].mean().reset_index()
+    filtered_daily.groupby("weekday")[["registered", "casual"]].mean().reset_index()
 )
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 4))
@@ -184,10 +144,10 @@ tab2.pyplot(fig2)
 fig3, axes3 = plt.subplots(1, 2, figsize=(10, 4))
 
 hourly_means = (
-    hourly_data.groupby("workingday")[["registered", "casual"]].mean().reset_index()
+    filtered_hourly.groupby("workingday")[["registered", "casual"]].mean().reset_index()
 )
 daily_means = (
-    daily_data.groupby("workingday")[["registered", "casual"]].mean().reset_index()
+    filtered_daily.groupby("workingday")[["registered", "casual"]].mean().reset_index()
 )
 
 tab1.subheader("Hari Libur vs. Hari Kerja")
@@ -238,12 +198,12 @@ tab2.header("2. Frekuensi Jam Puncak Sibuk")
 tab1.subheader("Jam Puncak Sibuk Total")
 tab2.subheader("Jam Puncak Sibuk Total")
 
-peak_hours_registered = hourly_data.loc[
-    hourly_data.groupby("dteday")["registered"].idxmax(), ["dteday", "hr"]
+peak_hours_registered = filtered_hourly.loc[
+    filtered_hourly.groupby("dteday")["registered"].idxmax(), ["dteday", "hr"]
 ]
 peak_counts_registered = peak_hours_registered["hr"].value_counts().sort_index()
-peak_hours_casual = hourly_data.loc[
-    hourly_data.groupby("dteday")["casual"].idxmax(), ["dteday", "hr"]
+peak_hours_casual = filtered_hourly.loc[
+    filtered_hourly.groupby("dteday")["casual"].idxmax(), ["dteday", "hr"]
 ]
 peak_counts_casual = peak_hours_casual["hr"].value_counts().sort_index()
 
@@ -263,7 +223,9 @@ tab2.pyplot(fig)
 
 tab1.subheader("Jam Puncak Sibuk Hari Kerja")
 tab2.subheader("Jam Puncak Sibuk Hari Kerja")
-data_workingday_registered = hourly_data[hourly_data["workingday"].between(1, 1)]
+data_workingday_registered = filtered_hourly[
+    filtered_hourly["workingday"].between(1, 1)
+]
 peak_hour_workingday_registered = data_workingday_registered.loc[
     data_workingday_registered.groupby("dteday")["registered"].idxmax(),
     ["dteday", "hr", "registered"],
@@ -273,7 +235,7 @@ working_day_registered = (
     peak_hour_workingday_registered["hr"].value_counts().sort_index()
 )
 
-data_workingday_casual = hourly_data[hourly_data["workingday"].between(1, 1)]
+data_workingday_casual = filtered_hourly[filtered_hourly["workingday"].between(1, 1)]
 peak_hour_workingday_casual = data_workingday_casual.loc[
     data_workingday_casual.groupby("dteday")["casual"].idxmax(),
     ["dteday", "hr", "casual"],
@@ -300,7 +262,9 @@ tab2.pyplot(fig)
 tab1.subheader("Jam Puncak Sibuk Hari Libur")
 tab2.subheader("Jam Puncak Sibuk Hari Libur")
 
-data_workingday_registered = hourly_data[hourly_data["workingday"].between(0, 0)]
+data_workingday_registered = filtered_hourly[
+    filtered_hourly["workingday"].between(0, 0)
+]
 peak_hour_workingday_registered = data_workingday_registered.loc[
     data_workingday_registered.groupby("dteday")["registered"].idxmax(),
     ["dteday", "hr", "registered"],
@@ -310,7 +274,7 @@ not_working_day_registered = (
     peak_hour_workingday_registered["hr"].value_counts().sort_index()
 )
 
-data_workingday_casual = hourly_data[hourly_data["workingday"].between(0, 0)]
+data_workingday_casual = filtered_hourly[filtered_hourly["workingday"].between(0, 0)]
 peak_hour_workingday_casual = data_workingday_casual.loc[
     data_workingday_casual.groupby("dteday")["casual"].idxmax(),
     ["dteday", "hr", "casual"],
@@ -366,7 +330,7 @@ corr_features = ["temp", "hum", "weathersit", "season", "windspeed"]
 targets = ["casual", "registered"]
 
 sns.heatmap(
-    daily_data[corr_features + targets].corr(), cmap="coolwarm", annot=True, ax=axes
+    filtered_daily[corr_features + targets].corr(), cmap="coolwarm", annot=True, ax=axes
 )
 tab1.pyplot(fig)
 tab2.pyplot(fig)
@@ -397,7 +361,7 @@ tab2.subheader("OLS Regression Casual Renter")
 features = ["temp", "hum", "windspeed", "season", "weathersit"]
 target1 = ["casual"]
 target2 = ["registered"]
-x_data = daily_data[features + target1 + target2]
+x_data = filtered_daily[features + target1 + target2]
 x_data["temp_actual"] = x_data["temp"].mul(41)
 x_data["hum_actual"] = x_data["hum"].mul(100)
 x_data["windspeed_actual"] = x_data["windspeed"].mul(67)
@@ -410,8 +374,8 @@ features_actual = [
     "weathersit",
 ]
 x = sm.add_constant(x_data[features_actual])
-y1 = daily_data[target1]
-y2 = daily_data[target2]
+y1 = filtered_daily[target1]
+y2 = filtered_daily[target2]
 
 model = sm.OLS(y1, x).fit()
 tab1.code(model.summary())
@@ -464,16 +428,16 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Hourly Data")
-    st.write(f"Records: {len(hourly_data)}")
+    st.write(f"Records: {len(filtered_hourly)}")
     st.write(
-        f"Date Range: {hourly_data['dteday'].min()} to {hourly_data['dteday'].max()}"
+        f"Date Range: {filtered_hourly['dteday'].min()} to {filtered_hourly['dteday'].max()}"
     )
 
 with col2:
     st.subheader("Daily Data")
-    st.write(f"Records: {len(daily_data)}")
+    st.write(f"Records: {len(filtered_daily)}")
     st.write(
-        f"Date Range: {daily_data['dteday'].min()} to {daily_data['dteday'].max()}"
+        f"Date Range: {filtered_daily['dteday'].min()} to {filtered_daily['dteday'].max()}"
     )
 
 # Add footer
